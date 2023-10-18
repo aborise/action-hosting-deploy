@@ -228,7 +228,7 @@ export async function deployProductionSite(
       "--only",
       `hosting${target ? ":" + target : ""},functions${
         functions ? ":" + functions : ""
-      }}`,
+      }`,
     ],
     projectId,
     gacFilename,
