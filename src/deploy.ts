@@ -165,7 +165,11 @@ export async function deployPreview(
     const json = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
     const originalEntryPoint = json.main.split(".").slice(0, -1).join(".");
 
+    console.log("originalEntryPoint", originalEntryPoint);
+
     json.main = `${originalEntryPoint}-${channelId}.js`;
+
+    console.log("json.main", json.main);
 
     fs.writeFileSync(packageJsonPath, JSON.stringify(json, null, 2));
 
@@ -190,6 +194,8 @@ export async function deployPreview(
       })
       .join("\n");
 
+    console.log("newEntryPointContent", newEntryPointContent);
+
     fs.writeFileSync(newEntryPoint, newEntryPointContent);
 
     const scopedFunctions = functions
@@ -198,6 +204,8 @@ export async function deployPreview(
           .map((f) => f.trim() + channelId)
           .join(",")
       : functions;
+
+    console.log("functions to deploy:", scopedFunctions || "all");
 
     // Also deploy functions
     await execWithCredentials(
