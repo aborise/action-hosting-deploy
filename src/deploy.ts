@@ -16,6 +16,8 @@
 
 import { exec } from "@actions/exec";
 import { channel } from "diagnostics_channel";
+import * as path from "path";
+import * as fs from "fs";
 
 export type SiteDeploy = {
   site: string;
@@ -46,6 +48,7 @@ type DeployConfig = {
   target?: string;
   // Optional version specification for firebase-tools. Defaults to `latest`.
   firebaseToolsVersion?: string;
+  functions?: string;
 };
 
 export type ChannelDeployConfig = DeployConfig & {
@@ -129,8 +132,14 @@ export async function deployPreview(
   gacFilename: string,
   deployConfig: ChannelDeployConfig
 ) {
-  const { projectId, channelId, target, expires, firebaseToolsVersion } =
-    deployConfig;
+  const {
+    projectId,
+    channelId,
+    target,
+    expires,
+    firebaseToolsVersion,
+    functions,
+  } = deployConfig;
 
   const deploymentText = await execWithCredentials(
     [
@@ -149,9 +158,54 @@ export async function deployPreview(
     | ErrorResult;
 
   if (deploymentResult.status === "success") {
+    // rewrite package.json to use a different entry point for main
+    // of the form `[originalEntryPoint]-[channelId].js`
+
+    const packageJsonPath = path.join(process.cwd(), "package.json");
+    const json = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+    const originalEntryPoint = json.main.split(".").slice(0, -1).join(".");
+
+    json.main = `${originalEntryPoint}-${channelId}.js`;
+
+    fs.writeFileSync(packageJsonPath, JSON.stringify(json, null, 2));
+
+    // read old entry point and extract all exports (export const foo, export let bar, export function baz)
+    const entryPoint = path.join(process.cwd(), originalEntryPoint + ".js");
+    const entryPointContent = fs.readFileSync(entryPoint, "utf-8");
+    const exports = entryPointContent.matchAll(
+      /export (const|let|var|function) (\w+)/g
+    );
+
+    // write new entry point that exports all exports from old entry point with added channelId
+    const newEntryPoint = path.join(
+      process.cwd(),
+      `${originalEntryPoint}-${channelId}.js`
+    );
+
+    const newEntryPointContent = Array.from(exports)
+      .map((match) => {
+        return `export ${match[2]} as ${
+          match[2]
+        }${channelId} from './${path.basename(originalEntryPoint)}.js';`;
+      })
+      .join("\n");
+
+    fs.writeFileSync(newEntryPoint, newEntryPointContent);
+
+    const scopedFunctions = functions
+      ? functions
+          .split(",")
+          .map((f) => f.trim() + channelId)
+          .join(",")
+      : functions;
+
     // Also deploy functions
     await execWithCredentials(
-      ["deploy", "--only", "functions"],
+      [
+        "deploy",
+        "--only",
+        `functions${scopedFunctions ? ":" + scopedFunctions : ""}`,
+      ],
       projectId,
       gacFilename,
       { firebaseToolsVersion, channelId }
@@ -165,10 +219,17 @@ export async function deployProductionSite(
   gacFilename,
   productionDeployConfig: ProductionDeployConfig
 ) {
-  const { projectId, target, firebaseToolsVersion } = productionDeployConfig;
+  const { projectId, target, firebaseToolsVersion, functions } =
+    productionDeployConfig;
 
   const deploymentText = await execWithCredentials(
-    ["deploy", "--only", `hosting${target ? ":" + target : ""},functions`],
+    [
+      "deploy",
+      "--only",
+      `hosting${target ? ":" + target : ""},functions${
+        functions ? ":" + functions : ""
+      }}`,
+    ],
     projectId,
     gacFilename,
     { firebaseToolsVersion }
