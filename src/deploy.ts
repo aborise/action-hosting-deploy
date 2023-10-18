@@ -213,7 +213,6 @@ export async function deployPreview(
         "deploy",
         "--only",
         `functions${scopedFunctions ? ":" + scopedFunctions : ""}`,
-        "--memory 512MiB",
       ],
       projectId,
       gacFilename,
@@ -238,7 +237,6 @@ export async function deployProductionSite(
       `hosting${target ? ":" + target : ""},functions${
         functions ? ":" + functions : ""
       }`,
-      "--memory 512MiB",
     ],
     projectId,
     gacFilename,
