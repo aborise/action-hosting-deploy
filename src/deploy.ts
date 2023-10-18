@@ -15,6 +15,7 @@
  */
 
 import { exec } from "@actions/exec";
+import { channel } from "diagnostics_channel";
 
 export type SiteDeploy = {
   site: string;
@@ -72,7 +73,7 @@ async function execWithCredentials(
   args: string[],
   projectId,
   gacFilename,
-  opts: { debug?: boolean; firebaseToolsVersion?: string }
+  opts: { debug?: boolean; firebaseToolsVersion?: string; channelId?: string }
 ) {
   let deployOutputBuf: Buffer[] = [];
   const debug = opts.debug || false;
@@ -97,6 +98,7 @@ async function execWithCredentials(
         env: {
           ...process.env,
           FIREBASE_DEPLOY_AGENT: "action-hosting-deploy",
+          VITE_APP_CHANNEL_ID: opts.channelId ?? "live",
           GOOGLE_APPLICATION_CREDENTIALS: gacFilename, // the CLI will automatically authenticate with this env variable set
         },
       }
@@ -139,12 +141,22 @@ export async function deployPreview(
     ],
     projectId,
     gacFilename,
-    { firebaseToolsVersion }
+    { firebaseToolsVersion, channelId }
   );
 
   const deploymentResult = JSON.parse(deploymentText.trim()) as
     | ChannelSuccessResult
     | ErrorResult;
+
+  if (deploymentResult.status === "success") {
+    // Also deploy functions
+    await execWithCredentials(
+      ["deploy", "--only", "functions"],
+      projectId,
+      gacFilename,
+      { firebaseToolsVersion, channelId }
+    );
+  }
 
   return deploymentResult;
 }
@@ -156,7 +168,7 @@ export async function deployProductionSite(
   const { projectId, target, firebaseToolsVersion } = productionDeployConfig;
 
   const deploymentText = await execWithCredentials(
-    ["deploy", "--only", `hosting${target ? ":" + target : ""}`],
+    ["deploy", "--only", `hosting${target ? ":" + target : ""},functions`],
     projectId,
     gacFilename,
     { firebaseToolsVersion }
